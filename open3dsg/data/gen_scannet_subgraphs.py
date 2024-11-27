@@ -305,6 +305,7 @@ if __name__ == '__main__':
             instance2label_scans[scan_id] = inst2labelName
     else:
         for scan_id in tqdm(scan_ids):
+            scan_id = "scene0092_02" 
             _, relationships, segs_neighbors, inst2labelName = process(scan_id, input_dir, split_scene=args.split)
             valid_scans.append(scan_id)
             relationships_new["scans"] += relationships
