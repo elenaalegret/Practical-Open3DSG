@@ -7,9 +7,10 @@ from open3dsg.config.config import CONF
 
 ROOT_PATH = CONF.PATH.R3SCAN_RAW
 SCANNET_DATA_PATH = '/store/datasets/scannet/scans'
-SCANNET_SPLIT_TRAIN = os.path.join(CONF.PATH.SCANNET_RAW, "scannetv2_train.txt")
-SCANNET_SPLIT_VAL = os.path.join(CONF.PATH.SCANNET_RAW, "scannetv2_val.txt")
-SCANNET_LABELS_COMB = os.path.join(CONF.PATH.SCANNET_RAW, "scannetv2-labels.combined.tsv")
+SCANNET_SPLIT_TRAIN = os.path.join("/mnt/scratch/3DSG/Datasets/SCANNET/scannetv2_train.txt")
+SCANNET_SPLIT_VAL = os.path.join("/mnt/scratch/3DSG/Datasets/SCANNET/scannetv2_val.txt")
+SCANNET_SPLIT_TEST = os.path.join("/mnt/scratch/3DSG/Datasets/SCANNET/scannetv2_test.txt")
+SCANNET_LABELS_COMB = os.path.join("/mnt/scratch/3DSG/Datasets/SCANNET/scannetv2-labels.combined.tsv")
 
 FILE_PATH = ROOT_PATH
 Scan3RJson_PATH = FILE_PATH+'3RScan.json'
@@ -31,3 +32,10 @@ SCANNET_PLY_SUBFIX = '_vh_clean_2.labels.ply'
 
 
 NAME_SAME_PART = 'same part'
+
+
+
+
+
+
+
