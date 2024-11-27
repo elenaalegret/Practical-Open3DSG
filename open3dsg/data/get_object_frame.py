@@ -234,6 +234,13 @@ def read_pointcloud_scannet(scan_id):
     points = np.array(plydata.vertices)
     return points, labels, instances
 
+def is_valid_filename(filename):
+    """Check if a filename is valid (not hidden or invalid for conversion)."""
+    try:
+        int(os.path.splitext(filename)[0])  # Try converting the filename (without extension) to an integer
+        return not filename.startswith('._')  # Exclude hidden files (like ._filename)
+    except ValueError:
+        return False
 
 def read_scan_info_scannet(scan_id, mode='depth'):
     scan_path = os.path.join(CONF.PATH.SCANNET_RAW2D, scan_id)
@@ -242,9 +249,9 @@ def read_scan_info_scannet(scan_id, mode='depth'):
     intrinsic_info = dict() # read_intrinsic(intrinsic_path, mode=mode)
 
     image_list, color_list, extrinsic_list = [], [], []
-    imgs = [img for img in sorted(os.listdir(os.path.join(scan_path, 'depth')), key=lambda x: int(os.path.splitext(x)[0]))]
-    colors = [img for img in sorted(os.listdir(os.path.join(scan_path, 'color')), key=lambda x: int(os.path.splitext(x)[0]))]
-    poses = [pose for pose in sorted(os.listdir(os.path.join(scan_path, 'pose')), key=lambda x: int(os.path.splitext(x)[0]))]
+    imgs = [img for img in sorted(os.listdir(os.path.join(scan_path, 'depth'))) if is_valid_filename(img)]
+    colors = [img for img in sorted(os.listdir(os.path.join(scan_path, 'color'))) if is_valid_filename(img)]
+    poses = [pose for pose in sorted(os.listdir(os.path.join(scan_path, 'pose'))) if is_valid_filename(pose)]
 
     # pylint: disable=consider-using-enumerate
     # print(imgs,poses)
