@@ -332,7 +332,7 @@ if __name__ == '__main__':
         for name in valid_scans:
             f.write(f'{name}\n')
 
-    pth_inst2label = os.path.join(args.pth_out, 'instance2labels')
+    pth_inst2label = os.path.join(output_dir, 'instance2labels')
     print(f"Store used inst2label at {pth_split}")
     os.makedirs(pth_inst2label, exist_ok=True)
     for scan_id, inst2labelName in instance2label_scans.items():
