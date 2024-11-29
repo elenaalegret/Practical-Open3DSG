@@ -11,3 +11,5 @@ classwise_eval
 *.egg-info
 assets
 experiments
+Dockerfile
+main.pai.yaml

@@ -16,6 +16,7 @@ from tqdm.contrib.concurrent import process_map
 import matplotlib.pyplot as plt
 from open3dsg.config.config import CONF
 from open3dsg.util.util_misc import read_txt_to_list
+import zipfile
 # from segment_anything import sam_model_registry, SamPredictor
 
 lock = multiprocessing.Lock()
@@ -80,12 +81,11 @@ def read_intrinsic(intrinsic_path, mode='rgb'):
     )
 
 
-def read_extrinsic(extrinsic_path):
+def read_extrinsic(lines):
     pose = []
-    with open(extrinsic_path) as f:
-        lines = f.readlines()
-    for line in lines:
-        pose.append([float(i) for i in line.strip().split(' ')])
+    for line in lines.split("\n"):
+        if line != "":
+            pose.append([float(i) for i in line.strip().split(' ')])
     return pose
 
 
@@ -228,7 +228,7 @@ def read_pointcloud_scannet(scan_id):
     """
     Reads a pointcloud from a file and returns points with instance label.
     """
-    base = os.path.join(CONF.PATH.SCANNET_RAW3D, scan_id)
+    base = os.path.join(CONF.PATH.SCANNET_RAW_DATSETS,scan_id)
     plydata, labels, instances = load_scannet(os.path.join(base, scan_id + '_vh_clean_2.labels.ply'), os.path.join(
         base, scan_id + '_vh_clean_2.0.010000.segs.json'), os.path.join(base, scan_id + '_vh_clean.aggregation.json'))
     points = np.array(plydata.vertices)
@@ -236,33 +236,50 @@ def read_pointcloud_scannet(scan_id):
 
 
 def read_scan_info_scannet(scan_id, mode='depth'):
-    scan_path = os.path.join(CONF.PATH.SCANNET_RAW2D, scan_id)
+    scan_path = os.path.join(CONF.PATH.SCANNET_RAW_DATSETS, scan_id, f"{scan_id}.zip")
     # sequence_path = os.path.join(scan_path, "color")
     # intrinsic_path = os.path.join(scan_path, "_info.txt")
     intrinsic_info = dict() # read_intrinsic(intrinsic_path, mode=mode)
 
     image_list, color_list, extrinsic_list = [], [], []
-    imgs = [img for img in sorted(os.listdir(os.path.join(scan_path, 'depth')), key=lambda x: int(os.path.splitext(x)[0]))]
-    colors = [img for img in sorted(os.listdir(os.path.join(scan_path, 'color')), key=lambda x: int(os.path.splitext(x)[0]))]
-    poses = [pose for pose in sorted(os.listdir(os.path.join(scan_path, 'pose')), key=lambda x: int(os.path.splitext(x)[0]))]
+    with zipfile.ZipFile(scan_path, 'r') as zip_file:
+        # Get all file names in the archive
+        all_files = zip_file.namelist()
+        
+        depth_files = sorted(
+            [f for f in all_files if f.startswith('depth/') and f.endswith('.png')],
+            key=lambda x: int(os.path.splitext(os.path.basename(x))[0])
+        )
 
-    # pylint: disable=consider-using-enumerate
-    # print(imgs,poses)
-    for i in range(0, len(imgs)):
-        frame_path = os.path.join(scan_path, 'depth', imgs[i])
-        color_path = os.path.join(scan_path, 'color', colors[i])
-        extrinsic_path = os.path.join(scan_path, 'pose', poses[i])
-        # print(frame_path,extrinsic_path)
-        assert os.path.exists(frame_path) and os.path.exists(extrinsic_path)
-        image_list.append(cv2.imread(frame_path, -1).reshape(-1))
-        color_img = cv2.imread(color_path)
-        color_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB)
-        color_list.append(color_img)
-
-        extrinsic = np.matrix(read_extrinsic(extrinsic_path))
-        extrinsic_list.append(extrinsic)
-    # pylint: enable=consider-using-enumerate
-
+        colors = sorted(
+            [f for f in all_files if f.startswith('color/') and f.endswith('.jpg')],
+            key=lambda x: int(os.path.splitext(os.path.basename(x))[0])
+        )
+        pose_files = sorted(
+            [f for f in all_files if f.startswith('pose/') and f.endswith('.txt')],
+            key=lambda x: int(os.path.splitext(os.path.basename(x))[0])
+        )
+        
+        for i in range(len(depth_files)):
+            # Read depth image
+            with zip_file.open(depth_files[i]) as f:
+                file_data = np.asarray(bytearray(f.read()), dtype=np.uint8)
+                depth_img = cv2.imdecode(file_data, cv2.IMREAD_UNCHANGED)
+                image_list.append(depth_img.reshape(-1))
+            
+            # Read color image
+            with zip_file.open(colors[i]) as f:
+                file_data = np.frombuffer(f.read(), dtype=np.uint8)
+                color_img = cv2.imdecode(file_data, cv2.IMREAD_COLOR)
+                color_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB)
+                color_list.append(color_img)
+            
+            # Read pose data
+            with zip_file.open(pose_files[i]) as f:
+                pose_data = f.read().decode('utf-8')
+                extrinsic = np.matrix(read_extrinsic(pose_data))
+                extrinsic_list.append(extrinsic)
+                
     return np.array(image_list), np.array(color_list), np.array(extrinsic_list), intrinsic_info, colors
 
 #############################
@@ -359,8 +376,10 @@ def run(scan, scene_data, export_path, dataset):
         pc_i, labels_i, instances_i = read_pointcloud_scannet(scan)
         instance_names = dict(zip(instances_i, labels_i))
         image_list, color_list, extrinsic_list, intrinsic_info, img_names = read_scan_info_scannet(scan)
-        intrinsic_info['m_intrinsic'] = np.loadtxt(os.path.join(CONF.PATH.SCANNET_RAW2D, 'intrinsics.txt'))
-        intrinsic_info['m_Width'], intrinsic_info['m_Height'] = 320, 240
+        intrinsic_info['m_intrinsic'] = np.loadtxt(os.path.join(CONF.PATH.SCANNET_RAW_PROJECTS,'scannet_2d', 'intrinsics.txt'))
+        #intrinsic_info['m_Width'], intrinsic_info['m_Height'] = 320, 240
+        intrinsic_info['m_Width'], intrinsic_info['m_Height'] = 640, 480
+
 
     object2frame = image_3d_mapping(scan, image_list, color_list, img_names, pc_i, instances_i, extrinsic_list,
                                     intrinsic_info['m_intrinsic'], instance_names, intrinsic_info['m_Width'], intrinsic_info['m_Height'], 0, 0.20, scene_data)
