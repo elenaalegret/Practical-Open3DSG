@@ -7,9 +7,9 @@ from open3dsg.config.config import CONF
 
 ROOT_PATH = CONF.PATH.R3SCAN_RAW
 SCANNET_DATA_PATH = '/store/datasets/scannet/scans'
-SCANNET_SPLIT_TRAIN = os.path.join(CONF.PATH.SCANNET_RAW, "scannetv2_train.txt")
-SCANNET_SPLIT_VAL = os.path.join(CONF.PATH.SCANNET_RAW, "scannetv2_val.txt")
-SCANNET_LABELS_COMB = os.path.join(CONF.PATH.SCANNET_RAW, "scannetv2-labels.combined.tsv")
+SCANNET_SPLIT_TRAIN = os.path.join(CONF.PATH.SCANNET_RAW_PROJECTS, "scannetv2_train.txt")
+SCANNET_SPLIT_VAL = os.path.join(CONF.PATH.SCANNET_RAW_PROJECTS, "scannetv2_val.txt")
+SCANNET_LABELS_COMB = os.path.join(CONF.PATH.SCANNET_RAW_PROJECTS, "scannet-labels.combined.tsv")
 
 FILE_PATH = ROOT_PATH
 Scan3RJson_PATH = FILE_PATH+'3RScan.json'

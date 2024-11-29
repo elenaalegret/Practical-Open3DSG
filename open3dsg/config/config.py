@@ -10,11 +10,30 @@ from easydict import EasyDict
 
 CONF = EasyDict()
 
-# path
+#Change to your name here
+name = "Noah"
 CONF.PATH = EasyDict()
-CONF.PATH.HOME = ""  # Your home directory
-CONF.PATH.BASE = ""  # OpenSG directory
-CONF.PATH.DATA = ""  # Root path for datasets
+
+# paths invidual depending where you mounted the drives
+#CONF.PATH.DATASETS --> mounted datasets folder from cluster
+#CONF.PATH.DATA_OUT --> mounted output folder from projects folder
+#CONF.PATH.DATA --> mounted data folder from projects folder
+if name == "Noah":
+    CONF.PATH.HOME = "/workspace"  # Your home directory
+    CONF.PATH.BASE = "/workspace"  # OpenSG directory
+    CONF.PATH.DATA = "../open3dsg/data"  # Root path for datasets
+    CONF.PATH.DATASETS = "../datasets"  # Root path for datasets
+    CONF.PATH.DATA_OUT = "../open3dsg/output"
+elif name =='Elena':
+    CONF.PATH.HOME = "/mnt/scratch"                                                        
+    CONF.PATH.BASE = "/mnt/scratch/Open3DSG"                                               
+    CONF.PATH.DATA = "/mnt/projects/open3dsg/data"                                          
+    CONF.PATH.DATA_OUT = "/mnt/projects/open3dsg/output"                                    
+elif name =='Ayaka':
+    CONF.PATH.HOME = "/mnt/scratch"                                                       
+    CONF.PATH.BASE = "/mnt/scratch/p3dcv/Practical-Open3DSG"                               
+    CONF.PATH.DATA = "/mnt/projects/open3dsg/data"                                         
+    CONF.PATH.DATA_OUT = "/mnt/projects/open3dsg/output"                                  
 
 # append to syspath
 for _, path in CONF.PATH.items():
@@ -22,14 +41,15 @@ for _, path in CONF.PATH.items():
 
 # Original Datasets
 CONF.PATH.R3SCAN_RAW = os.path.join(CONF.PATH.DATA, "3RScan")  # 3RScan original dataset directory
-CONF.PATH.SCANNET_RAW = os.path.join(CONF.PATH.DATA, "SCANNET")  # ScanNet original dataset directory
-CONF.PATH.SCANNET_RAW3D = os.path.join(CONF.PATH.SCANNET_RAW, "scannet_3d", "data")  # ScanNet original dataset directory
-CONF.PATH.SCANNET_RAW2D = os.path.join(CONF.PATH.SCANNET_RAW, "scannet_2d")  # ScanNet original dataset directory
+CONF.PATH.SCANNET_RAW_DATSETS = os.path.join(CONF.PATH.DATASETS, "scannet", "scans")  # ScanNet original dataset directory
+CONF.PATH.SCANNET_RAW_PROJECTS = os.path.join(CONF.PATH.DATA, "SCANNET")  # ScanNet original dataset directory
+#CONF.PATH.SCANNET_RAW3D = os.path.join(CONF.PATH.SCANNET_RAW_PROJECTS, "scannet_3d")  # ScanNet original dataset directory
+#CONF.PATH.SCANNET_RAW2D = os.path.join(CONF.PATH.SCANNET_RAW_PROJECTS, "scannet_2d")  # ScanNet original dataset directory
 
 # Processed Dataset
 # CONF.PATH.R3SCAN = os.path.join(CONF.PATH.DATA, "OpenSG_3RScan")
 # CONF.PATH.SCANNET = os.path.join(CONF.PATH.DATA, "OpenSG_ScanNet")
-CONF.PATH.DATA_OUT = ""  # Output directory for processed datasets
+# Output directory for processed datasets
 CONF.PATH.R3SCAN = os.path.join(CONF.PATH.DATA_OUT, "datasets", "OpenSG_3RScan")  # Output directory for processed 3RScan dataset
 CONF.PATH.SCANNET = os.path.join(CONF.PATH.DATA_OUT, "datasets", "OpenSG_ScanNet")  # Output directory for processed ScanNet dataset
 CONF.PATH.CHECKPOINTS = os.path.join(CONF.PATH.DATA_OUT, "checkpoints")
