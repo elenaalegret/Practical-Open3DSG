@@ -13,3 +13,4 @@ assets
 experiments
 Dockerfile
 main.pai.yaml
+*.DS_Store
