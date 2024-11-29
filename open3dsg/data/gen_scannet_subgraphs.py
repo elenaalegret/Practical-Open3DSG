@@ -263,7 +263,7 @@ if __name__ == '__main__':
     elif args.search_method == 'KNN':
         search_method = SAMPLE_METHODS.RADIUS
 
-    input_dir = os.path.join(CONF.PATH.SCANNET_RAW, "scannet_3d", "data")
+    input_dir = os.path.join(CONF.PATH.SCANNET_RAW_DATSETS)
     assert os.path.exists(input_dir), f"{input_dir} does not exist"
 
     output_dir = os.path.join(CONF.PATH.SCANNET, "subgraphs")
@@ -304,6 +304,7 @@ if __name__ == '__main__':
             relationships_new['neighbors'][scan_id] = segs_neighbors
             instance2label_scans[scan_id] = inst2labelName
     else:
+        #scan_ids = ['scene0383_01']
         for scan_id in tqdm(scan_ids):
             _, relationships, segs_neighbors, inst2labelName = process(scan_id, input_dir, split_scene=args.split)
             valid_scans.append(scan_id)
@@ -332,7 +333,7 @@ if __name__ == '__main__':
         for name in valid_scans:
             f.write(f'{name}\n')
 
-    pth_inst2label = os.path.join(args.pth_out, 'instance2labels')
+    pth_inst2label = os.path.join(output_dir, 'instance2labels')
     print(f"Store used inst2label at {pth_split}")
     os.makedirs(pth_inst2label, exist_ok=True)
     for scan_id, inst2labelName in instance2label_scans.items():

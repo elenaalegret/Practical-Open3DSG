@@ -76,7 +76,7 @@ def point_indices_from_group(points, seg_indices, group, labels_pd, CLASS_IDs):
     label = group['label']
 
     # Map the category name to id
-    label_ids = labels_pd[labels_pd['raw_category'] == label]['id']
+    label_ids = labels_pd[labels_pd['category'] == label]['nyu40id']
     label_id = int(label_ids.iloc[0]) if len(label_ids) > 0 else 0
 
     # Only store for the valid categories
