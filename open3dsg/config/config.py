@@ -33,6 +33,7 @@ elif name =='Elena':
 elif name =='Ayaka':
     CONF.PATH.HOME = "/mnt/scratch"                                                       
     CONF.PATH.BASE = "/mnt/scratch/p3dcv/Practical-Open3DSG"                               
+<<<<<<< HEAD
     CONF.PATH.DATA = "/mnt/projects/open3dsg/data" 
     CONF.PATH.DATASETS = "/mnt/datasets"                                        
     CONF.PATH.DATA_OUT = "/mnt/projects/open3dsg/output"
