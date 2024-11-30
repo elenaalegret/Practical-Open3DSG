@@ -228,7 +228,7 @@ def read_pointcloud_scannet(scan_id):
     """
     Reads a pointcloud from a file and returns points with instance label.
     """
-    base = os.path.join(CONF.PATH.SCANNET_RAW_DATSETS,scan_id)
+    base = os.path.join(CONF.PATH.SCANNET_RAW_DATASETS,scan_id)
     plydata, labels, instances = load_scannet(os.path.join(base, scan_id + '_vh_clean_2.labels.ply'), os.path.join(
         base, scan_id + '_vh_clean_2.0.010000.segs.json'), os.path.join(base, scan_id + '_vh_clean.aggregation.json'))
     points = np.array(plydata.vertices)
@@ -236,7 +236,7 @@ def read_pointcloud_scannet(scan_id):
 
 
 def read_scan_info_scannet(scan_id, mode='depth'):
-    scan_path = os.path.join(CONF.PATH.SCANNET_RAW_DATSETS, scan_id, f"{scan_id}.zip")
+    scan_path = os.path.join(CONF.PATH.SCANNET_RAW_DATASETS, scan_id, f"{scan_id}.zip")
     # sequence_path = os.path.join(scan_path, "color")
     # intrinsic_path = os.path.join(scan_path, "_info.txt")
     intrinsic_info = dict() # read_intrinsic(intrinsic_path, mode=mode)

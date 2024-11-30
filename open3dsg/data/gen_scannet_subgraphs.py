@@ -263,7 +263,7 @@ if __name__ == '__main__':
     elif args.search_method == 'KNN':
         search_method = SAMPLE_METHODS.RADIUS
 
-    input_dir = os.path.join(CONF.PATH.SCANNET_RAW_DATSETS)
+    input_dir = os.path.join(CONF.PATH.SCANNET_RAW_DATASETS)
     assert os.path.exists(input_dir), f"{input_dir} does not exist"
 
     output_dir = os.path.join(CONF.PATH.SCANNET, "subgraphs")
