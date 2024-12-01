@@ -206,7 +206,7 @@ class Preprocessor():
 
         # print(f"working on {relationships_scan['scan']}")
         scan_id, split = scan_id.split('-')
-        pth_scannet = CONF.PATH.SCANNET_RAW3D
+        pth_scannet = CONF.PATH.SCANNET_RAW_DATASETS
         pth_ply = os.path.join(pth_scannet, scan_id, scan_id + "_vh_clean_2.labels.ply")
         pth_cld = os.path.join(pth_scannet, scan_id, scan_id + "_vh_clean_2.ply")
         segseg_file_name = scan_id + "_vh_clean_2.0.010000.segs.json"
@@ -258,7 +258,7 @@ class Preprocessor():
                 continue
             # if labels_pd[labels_pd['raw_category'] == o['label']]['category'].iloc[0]  not in self.word2idx:  # Categories not under consideration
             #     continue
-            labels[id] = labels_pd[labels_pd['raw_category'] == o['label']]['category'].iloc[0]  # o["label"]
+            labels[id] = labels_pd[labels_pd['category'] == o['label']]['category'].iloc[0]  # o["label"]
             segs = o["segments"]
             objects[id] = []
 
