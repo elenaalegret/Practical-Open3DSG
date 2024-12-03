@@ -205,8 +205,8 @@ class Preprocessor():
     def process_one_scan(self, relationships_scan, scan_id):
 
         # print(f"working on {relationships_scan['scan']}")
-        scan_id, split = scan_id.split('-')
-        pth_scannet = CONF.PATH.SCANNET_RAW_DATASETS
+        scan_id, split = scan_id.split('-') # scan_id= scene0000 /// split 
+        pth_scannet = CONF.PATH.SCANNET_RAW_DATASETS # scene0000_00
         pth_ply = os.path.join(pth_scannet, scan_id, scan_id + "_vh_clean_2.labels.ply")
         pth_cld = os.path.join(pth_scannet, scan_id, scan_id + "_vh_clean_2.ply")
         segseg_file_name = scan_id + "_vh_clean_2.0.010000.segs.json"
