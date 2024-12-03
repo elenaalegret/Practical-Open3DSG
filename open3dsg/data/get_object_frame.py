@@ -16,15 +16,12 @@ from tqdm.contrib.concurrent import process_map
 import matplotlib.pyplot as plt
 from open3dsg.config.config import CONF
 from open3dsg.util.util_misc import read_txt_to_list
+import zipfile
 # from segment_anything import sam_model_registry, SamPredictor
 
 lock = multiprocessing.Lock()
 
 use_sam = False
-# sam = sam_model_registry['vit_b'](checkpoint='sam_vit_b_01ec64.pth').to(device="cuda")
-# sam.share_memory()
-# sam_predictor = SamPredictor(sam)
-
 
 def sam_selection(img, points):
     k_rounds = 10
@@ -80,12 +77,11 @@ def read_intrinsic(intrinsic_path, mode='rgb'):
     )
 
 
-def read_extrinsic(extrinsic_path):
+def read_extrinsic(lines):
     pose = []
-    with open(extrinsic_path) as f:
-        lines = f.readlines()
-    for line in lines:
-        pose.append([float(i) for i in line.strip().split(' ')])
+    for line in lines.split("\n"):
+        if line != "":
+            pose.append([float(i) for i in line.strip().split(' ')])
     return pose
 
 
@@ -127,15 +123,12 @@ def read_json(root, split):
 
     return scene_data, selected_scans
 
-####################################################
-
 
 def read_scan_info_R3SCAN(scan_id, mode='depth'):
     scan_path = os.path.join(CONF.PATH.R3SCAN_RAW, scan_id)
     sequence_path = os.path.join(scan_path, "sequence")
     intrinsic_path = os.path.join(sequence_path, "_info.txt")
     intrinsic_info = read_intrinsic(intrinsic_path, mode=mode)
-    # mode_template = 'color.jpg' if mode == 'rgb' else 'depth.pgm'
 
     image_list, color_list, extrinsic_list, frame_paths = [], [], [], []
 
@@ -144,18 +137,22 @@ def read_scan_info_R3SCAN(scan_id, mode='depth'):
         color_path = os.path.join(sequence_path, "frame-%s." % str(i).zfill(6) + 'color.jpg')
         frame_paths.append("frame-%s." % str(i).zfill(6) + 'color.jpg')
         extrinsic_path = os.path.join(sequence_path, "frame-%s." % str(i).zfill(6) + "pose.txt")
-        assert os.path.exists(frame_path) and os.path.exists(extrinsic_path)
+
+        if not (os.path.exists(frame_path) and os.path.exists(extrinsic_path)):
+            print(f"Skipping missing files: frame_path={frame_path}, extrinsic_path={extrinsic_path}")
+            continue
 
         color_list.append(np.array(plt.imread(color_path)))
 
         image_list.append(cv2.imread(frame_path, -1).reshape(-1))
         # inverce the extrinsic matrix, from camera_2_world to world_2_camera
-        extrinsic = np.matrix(read_extrinsic(extrinsic_path))
+        with open(extrinsic_path, "r") as f:
+            extrinsic_content = f.read()
+        extrinsic = np.matrix(read_extrinsic(extrinsic_content))
+
         extrinsic_list.append(extrinsic)
 
     return np.array(image_list), np.array(color_list), np.array(extrinsic_list), intrinsic_info, frame_paths
-
-####################################################
 
 
 def scannet_get_instance_ply(plydata, segs, aggre):
@@ -175,10 +172,8 @@ def scannet_get_instance_ply(plydata, segs, aggre):
         for seg in segGroup['segments']:
             aggre_seg_map[segGroup['id']].extend(seg_map[seg])
     assert (len(aggre_seg_map) == len(aggre['segGroups']))
-    # print('num of aggre_seg_map:',len(aggre_seg_map))
 
     ''' Over write label to segments'''
-    # labels = plydata.vertices[:,0] # wrong but work around
     try:
         labels = plydata.metadata['_ply_raw']['vertex']['data']['label']
     except:
@@ -228,52 +223,57 @@ def read_pointcloud_scannet(scan_id):
     """
     Reads a pointcloud from a file and returns points with instance label.
     """
-    base = os.path.join(CONF.PATH.SCANNET_RAW3D, scan_id)
+    base = os.path.join(CONF.PATH.SCANNET_RAW_DATSETS,scan_id)
     plydata, labels, instances = load_scannet(os.path.join(base, scan_id + '_vh_clean_2.labels.ply'), os.path.join(
         base, scan_id + '_vh_clean_2.0.010000.segs.json'), os.path.join(base, scan_id + '_vh_clean.aggregation.json'))
     points = np.array(plydata.vertices)
     return points, labels, instances
 
-def is_valid_filename(filename):
-    """Check if a filename is valid (not hidden or invalid for conversion)."""
-    try:
-        int(os.path.splitext(filename)[0])  # Try converting the filename (without extension) to an integer
-        return not filename.startswith('._')  # Exclude hidden files (like ._filename)
-    except ValueError:
-        return False
 
 def read_scan_info_scannet(scan_id, mode='depth'):
-    scan_path = os.path.join(CONF.PATH.SCANNET_RAW2D, scan_id)
-    # sequence_path = os.path.join(scan_path, "color")
-    # intrinsic_path = os.path.join(scan_path, "_info.txt")
-    intrinsic_info = dict() # read_intrinsic(intrinsic_path, mode=mode)
+    scan_path = os.path.join(CONF.PATH.SCANNET_RAW_DATSETS, scan_id, f"{scan_id}.zip")
+    intrinsic_info = dict()
 
     image_list, color_list, extrinsic_list = [], [], []
-    imgs = [img for img in sorted(os.listdir(os.path.join(scan_path, 'depth'))) if is_valid_filename(img)]
-    colors = [img for img in sorted(os.listdir(os.path.join(scan_path, 'color'))) if is_valid_filename(img)]
-    poses = [pose for pose in sorted(os.listdir(os.path.join(scan_path, 'pose'))) if is_valid_filename(pose)]
+    with zipfile.ZipFile(scan_path, 'r') as zip_file:
+        # Get all file names in the archive
+        all_files = zip_file.namelist()
+        
+        depth_files = sorted(
+            [f for f in all_files if f.startswith('depth/') and f.endswith('.png')],
+            key=lambda x: int(os.path.splitext(os.path.basename(x))[0])
+        )
 
-    # pylint: disable=consider-using-enumerate
-    # print(imgs,poses)
-    for i in range(0, len(imgs)):
-        frame_path = os.path.join(scan_path, 'depth', imgs[i])
-        color_path = os.path.join(scan_path, 'color', colors[i])
-        extrinsic_path = os.path.join(scan_path, 'pose', poses[i])
-        # print(frame_path,extrinsic_path)
-        assert os.path.exists(frame_path) and os.path.exists(extrinsic_path)
-        image_list.append(cv2.imread(frame_path, -1).reshape(-1))
-        color_img = cv2.imread(color_path)
-        color_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB)
-        color_list.append(color_img)
-
-        extrinsic = np.matrix(read_extrinsic(extrinsic_path))
-        extrinsic_list.append(extrinsic)
-    # pylint: enable=consider-using-enumerate
-
+        colors = sorted(
+            [f for f in all_files if f.startswith('color/') and f.endswith('.jpg')],
+            key=lambda x: int(os.path.splitext(os.path.basename(x))[0])
+        )
+        pose_files = sorted(
+            [f for f in all_files if f.startswith('pose/') and f.endswith('.txt')],
+            key=lambda x: int(os.path.splitext(os.path.basename(x))[0])
+        )
+        
+        for i in range(len(depth_files)):
+            # Read depth image
+            with zip_file.open(depth_files[i]) as f:
+                file_data = np.asarray(bytearray(f.read()), dtype=np.uint8)
+                depth_img = cv2.imdecode(file_data, cv2.IMREAD_UNCHANGED)
+                image_list.append(depth_img.reshape(-1))
+            
+            # Read color image
+            with zip_file.open(colors[i]) as f:
+                file_data = np.frombuffer(f.read(), dtype=np.uint8)
+                color_img = cv2.imdecode(file_data, cv2.IMREAD_COLOR)
+                color_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB)
+                color_list.append(color_img)
+            
+            # Read pose data
+            with zip_file.open(pose_files[i]) as f:
+                pose_data = f.read().decode('utf-8')
+                extrinsic = np.matrix(read_extrinsic(pose_data))
+                extrinsic_list.append(extrinsic)
+                
     return np.array(image_list), np.array(color_list), np.array(extrinsic_list), intrinsic_info, colors
-
-#############################
-
 
 def compute_mapping(world_to_camera, coords, depth, intrinsic, cut_bound, vis_thres, image_dim):
     mapping = np.zeros((3, coords.shape[0]), dtype=int)
@@ -302,7 +302,7 @@ def compute_mapping(world_to_camera, coords, depth, intrinsic, cut_bound, vis_th
 
 
 def image_3d_mapping(scan, image_list, color_list, img_names, point_cloud, instances, extrinsics, intrinsics, instance_names, image_width, image_height, boarder_pixels=0, vis_tresh=0.05, scene_data=None):
-    # dict(zip(list(instance_names.keys()),[[] for i in range(len(image_list))])) #dict with keys inst and then frame,points tuple
+    
     object2frame = dict()
 
     squeezed_instances = instances.squeeze()
@@ -352,11 +352,10 @@ def run(scan, scene_data, export_path, dataset):
     export_dir = export_path
     if not os.path.exists(export_dir):
         os.makedirs(export_dir, exist_ok=False)
-    # if not scan == "scene0358_00":
-    #     return
+
     output_filepath = os.path.join(export_dir, f"{scan}_object2image.pkl")
     if os.path.exists(output_filepath):
-        # print('path already exists: ', output_filepath)
+
         return
     instance_names = scene_data[scan]['obj']
     if dataset == "R3SCAN":
@@ -366,8 +365,9 @@ def run(scan, scene_data, export_path, dataset):
         pc_i, labels_i, instances_i = read_pointcloud_scannet(scan)
         instance_names = dict(zip(instances_i, labels_i))
         image_list, color_list, extrinsic_list, intrinsic_info, img_names = read_scan_info_scannet(scan)
-        intrinsic_info['m_intrinsic'] = np.loadtxt(os.path.join(CONF.PATH.SCANNET_RAW2D, 'intrinsics.txt'))
-        intrinsic_info['m_Width'], intrinsic_info['m_Height'] = 320, 240
+        intrinsic_info['m_intrinsic'] = np.loadtxt(os.path.join(CONF.PATH.SCANNET_RAW_PROJECTS,'scannet_2d', 'intrinsics.txt'))
+        intrinsic_info['m_Width'], intrinsic_info['m_Height'] = 640, 480
+
 
     object2frame = image_3d_mapping(scan, image_list, color_list, img_names, pc_i, instances_i, extrinsic_list,
                                     intrinsic_info['m_intrinsic'], instance_names, intrinsic_info['m_Width'], intrinsic_info['m_Height'], 0, 0.20, scene_data)
@@ -394,7 +394,7 @@ if __name__ == '__main__':
     if dataset == "SCANNET":
         root = os.path.join(CONF.PATH.SCANNET, "subgraphs")
     else:
-        root = os.path.join(CONF.PATH.R3SCAN_RAW, "3DSSG_subset")
+        root = os.path.join(CONF.PATH.R3SCAN_RAW)
 
     scene_data, selected_scans = read_json(root, mode)
     export_path = os.path.join(export_path, "views")
