@@ -203,10 +203,20 @@ class Preprocessor():
             index += 1
 
     def process_one_scan(self, relationships_scan, scan_id):
+        """
+        Objects:
+            Groups points into objects based on segmentations.
+            Extracts key object features like point clouds, labels, and bounding boxes.
+        Relationships:
+            Constructs relationships between objects in the form of triples (subject, object, predicate).
+            Generates point clouds for the union bounding boxes of object pairs.
+        Scene Graph:
+            Outputs a data dictionary containing all the relevant information to represent the scene as a graph.
+        """
 
         # print(f"working on {relationships_scan['scan']}")
-        scan_id, split = scan_id.split('-') # scan_id= scene0000 /// split 
-        pth_scannet = CONF.PATH.SCANNET_RAW_DATASETS # scene0000_00
+        scan_id, split = scan_id.split('-')
+        pth_scannet = CONF.PATH.SCANNET_RAW_DATASETS
         pth_ply = os.path.join(pth_scannet, scan_id, scan_id + "_vh_clean_2.labels.ply")
         pth_cld = os.path.join(pth_scannet, scan_id, scan_id + "_vh_clean_2.ply")
         segseg_file_name = scan_id + "_vh_clean_2.0.010000.segs.json"
@@ -215,12 +225,12 @@ class Preprocessor():
         pth_info = os.path.join(pth_scannet, scan_id, scan_id + ".txt")
 
         pcl = trimesh.load(pth_cld, process=False)
-        pcl_array, rgb_array, normals_array = np.asarray(pcl.vertices), np.asarray(
-            pcl.visual.vertex_colors[:, :3]), np.asarray(pcl.vertex_normals)
+        #  pcl_array: 3D coordinates of points // rgb_array: RGB color values of points // normals_array: Normals of points
+        pcl_array, rgb_array, normals_array = np.asarray(pcl.vertices), np.asarray(pcl.visual.vertex_colors[:, :3]), np.asarray(pcl.vertex_normals)
+        # labels_gt: Semantic labels of points // segments_gt: Segment IDs for grouping points
         cloud_gt, points_gt, labels_gt, segments_gt = load_scannet(pth_ply, pth_seg, pth_agg)
 
-        object2fame = pickle.load(open(os.path.join(CONF.PATH.SCANNET, 'views',
-                                  f"{relationships_scan['scan']}_object2image.pkl"), "rb"))
+        object2fame = pickle.load(open(os.path.join(CONF.PATH.SCANNET, 'views', f"{relationships_scan['scan']}_object2image.pkl"), "rb"))
 
         with open(pth_seg) as f:
             segments = json.load(f)
@@ -231,8 +241,8 @@ class Preprocessor():
             aggregation = json.load(f)
             seg_groups = np.array(aggregation['segGroups'])
 
-        # group points in the same segment
-        segments = {}  # key:segment id, value: points belong to this segment
+        # Group points in the same segment
+        segments = {}  # key: segment id, value: points belong to this segment
         for index, i in enumerate(seg_indices):
             if i not in segments:
                 segments[i] = []
@@ -240,7 +250,7 @@ class Preprocessor():
                 continue
             segments[i].append(np.concatenate((pcl_array[index], rgb_array[index], normals_array[index])))
 
-        # group points of the same object
+        # Group points of the same object
         # filter the object which does not belong to this split
         obj_id_list = []
         for k, _ in relationships_scan["objects"].items():
@@ -248,10 +258,12 @@ class Preprocessor():
         if len(obj_id_list) > 10 or len(obj_id_list) < 4:
             return None
 
-        objects = {}  # object mapping to its belonging points
-        obb = {}  # obb in this scan split, size equals objects num
-        labels = {}  # { id: 'category name', 6:'trash can'}
-        seg2obj = {}  # mapping between segment and object id
+        objects = {}                    # object mapping to its belonging points
+        obb = {}                        # obb in this scan split, size equals objects num
+        labels = {}                     # {id: 'category name', 6:'trash can'}
+        seg2obj = {}                    # mapping between segment and object id
+        
+        # Maps segment groups to object IDs and associates them with their points and labels.
         for o in seg_groups:
             id = o["id"]
             if id not in obj_id_list:  # no corresponding relationships in this split
@@ -266,7 +278,7 @@ class Preprocessor():
                 seg2obj[i] = id
                 for j in segments[i]:
                     objects[id] = j.reshape(1, -1) if len(objects[id]) == 0 else np.concatenate((objects[id], j.reshape(1, -1)), axis=0)
-            obb[id] = extract_bbox(objects[id][:, :3])
+            obb[id] = extract_bbox(objects[id][:, :3]) # Extract bbox for obj
 
         # sample and normalize point cloud
         obj_sample = 1000
@@ -310,6 +322,7 @@ class Preprocessor():
         # (frame, pixels, vis_fraction, bbox)
         object2frame_split = {}
         drop = []
+        # visibility in the scene
         for o_i, o in enumerate(objects_id):
             if object2fame.get(o, None) is None:
                 drop.append(o_i)
@@ -331,6 +344,7 @@ class Preprocessor():
         triples = []
         pairs = []
         relationships_triples = relationships_scan["relationships"]
+        # Construct the relationships as triples: (subject, object, predicate)
         for triple in relationships_triples:
             if (triple[0] not in objects_id) or (triple[1] not in objects_id) or (triple[0] == triple[1]):
                 continue
@@ -363,6 +377,7 @@ class Preprocessor():
                 o_s_frames = [(i, k, p, b, pix) for (i, k, p, b, pix) in object2fame[o] if i in shared_frames]
                 # (frame, s_pixels, o_pixels, s_vis, o_vis, s_bbox, o_bbox)
                 rel2frame_split = [(s_f[0], s_f[1], o_f[1], s_f[2], o_f[2], s_f[3], o_f[3]) for s_f, o_f in zip(s_o_frames, o_s_frames)]
+                # Combines point clouds for subject and object bounding boxes to represent the relationship
                 union_pcl = []
                 pred_cls = np.zeros(len(self.rel2idx))
                 for triple in triples:
@@ -450,8 +465,8 @@ class Preprocessor():
         # if not (relationship['scan'] in redo.keys()):# and relationship['split'] == redo[relationship['scan']]):
         #     return
 
-        scan_id = relationship["scan"] + "-" + str(hex(relationship["split"]))[-1]
-        folder = os.path.join(CONF.PATH.SCANNET, "preprocessed", scan_id.split('-')[0])
+        scan_id = relationship["scan"] + "-" + str(hex(relationship["split"]))[-1] # scan: scene0358_01 // split: 2 // scan_id: scene0358_01-2
+        folder = os.path.join(CONF.PATH.SCANNET, "preprocessed", scan_id.split('-')[0]) # Output path 
         filepath = os.path.join(folder, f"data_dict_{scan_id.split('-')[1]}.pkl")
         if os.path.exists(filepath) and self.skip_existing:
             # print('skipping already exists')
@@ -474,7 +489,7 @@ class Preprocessor():
         # with open(path, 'w') as f:
         #     f.write(json.dumps(data_dict, indent=4))
         with open(filepath, "wb") as f:
-            pickle.dump(data_dict, f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(data_dict, f, protocol=pickle.HIGHEST_PROTOCOL) # Preprocessed data for the scene split. // scene0358_01/data_dict_2.pkl
         lock.release()
 
 
@@ -482,6 +497,8 @@ if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
     argparser.add_argument('--parallel', action='store_true', help='parallel', required=False)
     args = argparser.parse_args()
+    
+    # Shape: {"scans": [{"scan": str, "split": int, "objects": {"6": "chair", ...}, "relationships": []}, ... ]
     relationships_train = json.load(open(os.path.join(CONF.PATH.SCANNET, "subgraphs", "relationships_train.json")))["scans"]
     relationships_val = json.load(open(os.path.join(CONF.PATH.SCANNET, "subgraphs", "relationships_validation.json")))["scans"]
 
@@ -496,3 +513,4 @@ if __name__ == '__main__':
     else:
         for r in tqdm(relationships):
             processor.write_pickle(r)
+

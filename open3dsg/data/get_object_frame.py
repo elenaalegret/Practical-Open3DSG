@@ -28,6 +28,8 @@ use_sam = False
 
 
 def sam_selection(img, points):
+    """ Generates a segmentation mask for an object in an image, selecting the best one 
+    based on input points and model confidence """
     k_rounds = 10
     k_sample = 5
     score_prime = 0
@@ -159,11 +161,16 @@ def read_scan_info_R3SCAN(scan_id, mode='depth'):
 
 
 def scannet_get_instance_ply(plydata, segs, aggre):
+    """
+    ScanNet scene data to associate 3D point cloud vertices with instance IDs. 
+    It groups points based on their segmentation and aggregation data, then maps 
+    each point to the object instance it belongs to.
+    """
     ''' map idx to segments '''
     seg_map = dict()
     for idx in range(len(segs['segIndices'])):
-        seg = segs['segIndices'][idx]
-        if seg in seg_map:
+        seg = segs['segIndices'][idx] # Shape: 
+        if seg in seg_map: # seg_map: {..., seg_id: [..., point_id, ...], ...}
             seg_map[seg].append(idx)
         else:
             seg_map[seg] = [idx]
@@ -171,7 +178,7 @@ def scannet_get_instance_ply(plydata, segs, aggre):
     ''' Group segments '''
     aggre_seg_map = dict()
     for segGroup in aggre['segGroups']:
-        aggre_seg_map[segGroup['id']] = list()
+        aggre_seg_map[segGroup['id']] = list() # aggre_seg_map: {..., instance_id: [..., seg_id, ...], ...}
         for seg in segGroup['segments']:
             aggre_seg_map[segGroup['id']].extend(seg_map[seg])
     assert (len(aggre_seg_map) == len(aggre['segGroups']))
@@ -195,10 +202,15 @@ def scannet_get_instance_ply(plydata, segs, aggre):
         for idx in indices:
             instances[idx] = seg
 
-    return plydata, instances
+    return plydata, instances # plydata: x y z r g b label // instances: array[..., instance_id_n, ...] index_n=point_id poind_id belongs to instance_id_n
 
 
 def load_scannet(pth_ply, pth_seg, pth_agg, verbose=False, random_color=False):
+    """
+    Loads and processing 3D data from a ScanNet scene, including the point cloud data, 
+    segmentation information, and aggregation details. It returns the processed point cloud, 
+    the labels for each point, and the instance IDs associated with each point.
+    """
     ''' Load GT '''
     plydata = trimesh.load(pth_ply, process=False)
     num_verts = plydata.vertices.shape[0]
@@ -228,14 +240,19 @@ def read_pointcloud_scannet(scan_id):
     """
     Reads a pointcloud from a file and returns points with instance label.
     """
-    base = os.path.join(CONF.PATH.SCANNET_RAW_DATASETS,scan_id)
-    plydata, labels, instances = load_scannet(os.path.join(base, scan_id + '_vh_clean_2.labels.ply'), os.path.join(
-        base, scan_id + '_vh_clean_2.0.010000.segs.json'), os.path.join(base, scan_id + '_vh_clean.aggregation.json'))
+    base = os.path.join(CONF.PATH.SCANNET_RAW_DATASETS, scan_id)
+    plydata, labels, instances = load_scannet(os.path.join(base, scan_id + '_vh_clean_2.labels.ply'),           # GT: Each row is one 3D point. x y z r g b label
+                                              os.path.join(base, scan_id + '_vh_clean_2.0.010000.segs.json'),   # Semantic seg Shape: [..., segi, ...] Len: number_3D_points
+                                              os.path.join(base, scan_id + '_vh_clean.aggregation.json'))       # Segment info: id, objectId, segments (info about the seg that compose a obj), label. Shape segments: [..., segi, ...]
     points = np.array(plydata.vertices)
     return points, labels, instances
 
 
 def read_scan_info_scannet(scan_id, mode='depth'):
+    """
+    Extracts depth images, color images, and camera poses (extrinsics) from a 
+    compressed .zip file associated with a ScanNet scene.
+    """
     scan_path = os.path.join(CONF.PATH.SCANNET_RAW_DATASETS, scan_id, f"{scan_id}.zip")
     # sequence_path = os.path.join(scan_path, "color")
     # intrinsic_path = os.path.join(scan_path, "_info.txt")
@@ -286,6 +303,10 @@ def read_scan_info_scannet(scan_id, mode='depth'):
 
 
 def compute_mapping(world_to_camera, coords, depth, intrinsic, cut_bound, vis_thres, image_dim):
+    """
+    Maps 3D coordinates of points from the world space to their corresponding 2D pixel coordinates in an image plane. 
+    This function also filters out points that are not visible (occluded or outside the camera's field of view)
+    """
     mapping = np.zeros((3, coords.shape[0]), dtype=int)
     coords_new = np.concatenate([coords, np.ones([coords.shape[0], 1])], axis=1).T
     assert coords_new.shape[0] == 4, "[!] Shape error"
@@ -312,31 +333,39 @@ def compute_mapping(world_to_camera, coords, depth, intrinsic, cut_bound, vis_th
 
 
 def image_3d_mapping(scan, image_list, color_list, img_names, point_cloud, instances, extrinsics, intrinsics, instance_names, image_width, image_height, boarder_pixels=0, vis_tresh=0.05, scene_data=None):
+    """Projects 3D points into 2D image space using camera intrinsics and extrinsics and evaluates visibility"""
     # dict(zip(list(instance_names.keys()),[[] for i in range(len(image_list))])) #dict with keys inst and then frame,points tuple
     object2frame = dict()
 
     squeezed_instances = instances.squeeze()
     image_dim = np.array([image_width, image_height])
+    # For each image
     for i, (extrinsic, depth, color) in enumerate(zip(extrinsics, image_list, color_list)):
+        # Convert 3D points coordinates to camera coordinates.
         world_to_camera = np.linalg.inv(extrinsic)
         depth = depth.reshape(image_dim[::-1])/1000
+
         for inst in instance_names.keys():
+            # Filter 3D points belonging to the current object (inst).
             locs_in = point_cloud[squeezed_instances == int(inst)]
+            # 3D points into 2D image plane
             mapping = compute_mapping(world_to_camera, locs_in, depth, np.array(intrinsics), boarder_pixels, vis_tresh, image_dim).T
             homog_points = mapping[:, 2] == 1
-            ratio = (homog_points).sum()/mapping.shape[0]
+            ratio = (homog_points).sum()/mapping.shape[0] # visible points / total number object points
             pixels = mapping[:, -1].sum()
             if pixels > 12 and ((ratio > 0.3 or pixels > 80) or (instance_names[inst] in ['wall', 'floor'] and pixels > 80)):
+                # Image-related metadata for the current object
                 if inst not in object2frame:
                     object2frame[inst] = []
-                obj_points = mapping[homog_points]
-                unique_mapping = np.unique(mapping[homog_points][:, :2], axis=0).astype(np.uint16)
+                obj_points = mapping[homog_points] # Visible points for the object.
+                unique_mapping = np.unique(mapping[homog_points][:, :2], axis=0).astype(np.uint16) # 2D pixel coordinates covered by the object.
                 if use_sam:
                     obj_mask = sam_selection(color, obj_points[:, :2][:, ::-1])
                     rows, cols = np.where(obj_mask.squeeze())
                     object2frame[inst].append((img_names[i], pixels, ratio, (np.min(cols), np.min(rows), np.max(
                         cols), np.max(rows)), unique_mapping))
                 else:
+                    # img_names[i]: img name // pixels: pixels contained in the obj // ratio:visibility ratio // bbox // unique_mapping: 2d pixel coord
                     object2frame[inst].append((img_names[i], pixels, ratio, (obj_points[:, 1].min(), obj_points[:, 0].min(
                     ), obj_points[:, 1].max(), obj_points[:, 0].max()), unique_mapping))
 
@@ -368,18 +397,21 @@ def run(scan, scene_data, export_path, dataset):
     if os.path.exists(output_filepath):
         # print('path already exists: ', output_filepath)
         return
+
+    # Get the obj instance names for the current scan
     instance_names = scene_data[scan]['obj']
     if dataset == "R3SCAN":
         pc_i, instances_i = read_pointcloud_R3SCAN(scan)
         image_list, color_list, extrinsic_list, intrinsic_info, img_names = read_scan_info_R3SCAN(scan)
     else:
-        pc_i, labels_i, instances_i = read_pointcloud_scannet(scan)
+        # Read the point cloud and labels
+        pc_i, labels_i, instances_i = read_pointcloud_scannet(scan) # pc_i: (number_points, (x, y, z)) // labels_i: (number_points,) SemanticLabelxPoint // instances_i: (number_points,) InstanceLabelxPoint
+        # Map instance IDs to their corresponding labels
         instance_names = dict(zip(instances_i, labels_i))
+        # Load image, camera information and ntrinsic camera parameters
         image_list, color_list, extrinsic_list, intrinsic_info, img_names = read_scan_info_scannet(scan)
         intrinsic_info['m_intrinsic'] = np.loadtxt(os.path.join(CONF.PATH.SCANNET_RAW_PROJECTS,'scannet_2d', 'intrinsics.txt'))
-        #intrinsic_info['m_Width'], intrinsic_info['m_Height'] = 320, 240
-        intrinsic_info['m_Width'], intrinsic_info['m_Height'] = 640, 480
-
+        intrinsic_info['m_Width'], intrinsic_info['m_Height'] = 640, 480 #  320, 240
 
     object2frame = image_3d_mapping(scan, image_list, color_list, img_names, pc_i, instances_i, extrinsic_list,
                                     intrinsic_info['m_intrinsic'], instance_names, intrinsic_info['m_Width'], intrinsic_info['m_Height'], 0, 0.20, scene_data)
@@ -408,7 +440,8 @@ if __name__ == '__main__':
     else:
         root = os.path.join(CONF.PATH.R3SCAN_RAW, "3DSSG_subset")
 
-    scene_data, selected_scans = read_json(root, mode)
+    scene_data, selected_scans = read_json(root, mode) # dict('scene_id': {'obj': [], 'rel': []}) , scans_names
+    os.makedirs(export_path, exist_ok=True)
     export_path = os.path.join(export_path, "views")
 
     scans = sorted(list(scene_data.keys()))

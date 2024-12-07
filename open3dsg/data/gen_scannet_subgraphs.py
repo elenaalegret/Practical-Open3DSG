@@ -27,6 +27,7 @@ from open3dsg.util.scannet200 import nyu2scannet
 
 
 def Parser(add_help=True):
+    # Create a parser to process command-line arguments
     parser = argparse.ArgumentParser(description='Process some integers.', formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                      add_help=add_help)
     parser.add_argument('--type', type=str, default='validation',
@@ -58,18 +59,20 @@ def Parser(add_help=True):
 
 def generate_groups(cloud: trimesh.points.PointCloud, segments: np.ndarray, distance: float = 1, bbox_distance: float = 0.75,
                     min_seg_per_group=5, segs_neighbors=None, instance2label=None):
+    
     points = np.array(cloud.vertices.tolist())
-
     points = points[segments != 0]
     segments = segments[segments != 0]
-
     selected_indices = list()
 
+    # Select random points of the 3D point cloud in order to start the grouping
     index = np.random.choice(range(len(points)), 1)
     selected_indices.append(index)
+
     should_continue = True
     while should_continue:
         distances_pre = None
+        # Calculate distances for all currently selected seeds
         for index in selected_indices:
             point = points[index]
             # ignore z axis.
@@ -77,10 +80,15 @@ def generate_groups(cloud: trimesh.points.PointCloud, segments: np.ndarray, dist
             if distances_pre is not None:
                 distances = np.minimum(distances, distances_pre)
             distances_pre = distances
+        
+        # Find points that are farther than the given distance from all seeds
         selectable = np.where(distances > distance)[0]
         if len(selectable) < 1:
+            # Stop if no points are left to select
             should_continue = False
             break
+        
+        # Randomly select the next seed from the remaining points
         index = np.random.choice(selectable, 1)
         selected_indices.append(index)
 
@@ -88,7 +96,6 @@ def generate_groups(cloud: trimesh.points.PointCloud, segments: np.ndarray, dist
     seg_group = list()
 
     #  Building Box Method #
-
     class SAMPLE_METHODS(Enum):
         BBOX = 1
         RADIUS = 2
@@ -99,20 +106,24 @@ def generate_groups(cloud: trimesh.points.PointCloud, segments: np.ndarray, dist
 
     if sample_method == SAMPLE_METHODS.BBOX:
         for index in selected_indices:
+            # Define the bounding box around the seed point
             point = points[index]
             min_box = (point-bbox_distance)[0]
             max_box = (point+bbox_distance)[0]
 
+            # Find points within the bounding box
             filter_mask = (points[:, 0] > min_box[0]) * (points[:, 0] < max_box[0]) \
                 * (points[:, 1] > min_box[1]) * (points[:, 1] < max_box[1]) \
                 * (points[:, 2] > min_box[2]) * (points[:, 2] < max_box[2])
 
+            # Get the segments with its points within the bounding box
             filtered_segments = segments[np.where(filter_mask > 0)[0]]
             segment_ids = np.unique(filtered_segments)
             # print('segGroup {} has {} segments.'.format(index,len(segment_ids)))
             if len(segment_ids) < min_seg_per_group:
                 continue
-
+            
+            # Handle cases where the group has many segments
             # problem -> 30/2 is still bigger than 10
             if len(segment_ids) > 9 and len(segment_ids) <= 18:
                 if len(segment_ids)//2 > min_seg_per_group:
@@ -149,54 +160,57 @@ def generate_groups(cloud: trimesh.points.PointCloud, segments: np.ndarray, dist
 
 
 def process(scan_id, pth_3RScan, split_scene=True):
+    # Define file paths for the ScanNet dataset
+    pth_gt = os.path.join(pth_3RScan, scan_id, scan_id + "_vh_clean_2.labels.ply")  # GT: Each row is one 3D point. x y z r g b label
+    segseg_file_name = scan_id + "_vh_clean_2.0.010000.segs.json"                   # Semantic seg Shape: [..., segi, ...] Len: number_3D_points
+    pth_semseg_file = os.path.join(pth_3RScan, scan_id, segseg_file_name)           # Path to segmentation file
+    pth_ply = pth_gt                                                                
+    pth_agg = os.path.join(pth_3RScan, scan_id, scan_id + ".aggregation.json")      # Segment info: id, objectId, segments (info about the seg that compose a obj), label. Shape segments: [..., segi, ...]
+    pth_seg = pth_semseg_file                                                       
+    pth_info = os.path.join(pth_3RScan, scan_id, scan_id + ".txt")                  # Metadata file path
 
-    pth_gt = os.path.join(pth_3RScan, scan_id, scan_id +
-                          "_vh_clean_2.labels.ply")
-    segseg_file_name = scan_id + \
-        "_vh_clean_2.0.010000.segs.json"
-    pth_semseg_file = os.path.join(pth_3RScan, scan_id, segseg_file_name)
-    pth_ply = pth_gt
-    pth_agg = os.path.join(pth_3RScan, scan_id, scan_id + ".aggregation.json")
-    pth_seg = pth_semseg_file
-    pth_info = os.path.join(pth_3RScan, scan_id, scan_id + ".txt")
-    cloud_gt, points_gt, _, segments_gt = dataLoaderScanNet.load_scannet(pth_ply, pth_agg, pth_seg)
-    labels_gt200, segments_gt200 = nyu2scannet(scan_id, pth_ply, pth_seg, pth_agg, pth_info)
+    # Load the ScanNet data and labels
+    cloud_gt, points_gt, _, segments_gt = dataLoaderScanNet.load_scannet(pth_ply, pth_agg, pth_seg) # cloud_gt: 3d point cloud + triangles  points_gt: (x, y, z)  segments_gt: [..., segi, ...]
+    labels_gt200, segments_gt200 = nyu2scannet(scan_id, pth_ply, pth_seg, pth_agg, pth_info) # Convert labels to gt200 labels
 
+    # Find segment neighbors using the specified search method
     segs_neighbors = find_neighbors(points_gt, segments_gt, search_method, receptive_field=args.radius_receptive)
-    relationships_new['neighbors'][scan_id] = segs_neighbors
+    relationships_new['neighbors'][scan_id] = segs_neighbors # {scan_id {segment_id: [..., segment_id, ...]}}
 
+    # Extract unique segment IDs, excluding the background (ID=0)
     segment_ids = np.unique(segments_gt)
     segment_ids = segment_ids[segment_ids != 0]
 
+    # Load instance-to-label mappings: from seg_id to word
     if args.label_type == "ScanNet20":
         _, label_name_mapping, _ = util_label.getLabelMapping(args.label_type)
-
-        instance2labelName = util_misc.load_semseg_scannet(
-            pth_ply, pth_agg, pth_seg, label_name_mapping)
+        instance2labelName = util_misc.load_semseg_scannet(pth_ply, pth_agg, pth_seg, label_name_mapping)
     elif args.label_type == "ScanNet200":
-        instance2labelName = util_misc.load_semseg_scannet200(
-            labels_gt200, segments_gt200)
+        instance2labelName = util_misc.load_semseg_scannet200(labels_gt200, segments_gt200)
     else:
         raise RuntimeError("Label type not supported")
 
+    # Split the scene into segment groups 
     if split_scene:
         seg_groups = generate_groups(cloud_gt, segments_gt, args.radius_seed, args.radius_receptive, args.min_segs,
-                                     segs_neighbors=segs_neighbors, instance2label=instance2labelName)
+                                     segs_neighbors=segs_neighbors, instance2label=instance2labelName) # Group segments (not points) Shape: [[..., segi, ...], ..., [..., segj, ...]]
         if args.verbose:
             print('final segGroups:', len(seg_groups))
     else:
         seg_groups = None
 
-    #  Find and count all corresponding segments#
+    # Map each segment to its size and ID
+    # Find and count all corresponding segments#
     size_segments_gt = dict()
-    map_segment_pd_2_gt = dict()  # map segment_pd to segment_gt
+    map_segment_pd_2_gt = dict()                                    # Map predicted segments to ground truth segments
     for segment_id in segment_ids:
-        segment_indices = np.where(segments_gt == segment_id)[0]
-        segment_points = points_gt[segment_indices]
-        size_segments_gt[segment_id] = len(segment_points)
-        map_segment_pd_2_gt[segment_id] = segment_id
+        segment_indices = np.where(segments_gt == segment_id)[0]    # Find points indices (indices of segments_gt) that belong to segment_id
+        segment_points = points_gt[segment_indices]                 # Extract points for the segment
+        size_segments_gt[segment_id] = len(segment_points)          # Store the size of the segment
+        map_segment_pd_2_gt[segment_id] = segment_id                # Map the segment to itself
 
-    #  Save as ply #
+    # Debug mode: Export the modified ground truth point cloud for visualization
+    # Save as ply
     if debug:
         for seg, label_name in instance2labelName.items():
             segment_indices = np.where(segments_gt == seg)[0]
@@ -206,7 +220,8 @@ def process(scan_id, pth_3RScan, split_scene=True):
                 cloud_gt.visual.vertex_colors[index][:3] = [0, 0, 0]
         cloud_gt.export(os.path.join(CONF.PATH.SCANNET, "subgraphs", 'tmp_gtcloud.ply'))
 
-    # ' Save as relationship_*.json #
+    # ' Save as relationship_*.json 
+    # relationships: {scan: scan_id, split: split_id, objects: {2:wall, ...}, relationships: []}
     list_relationships = list()
     if seg_groups is not None:
         for split_id, seg_group in enumerate(seg_groups):
@@ -215,15 +230,14 @@ def process(scan_id, pth_3RScan, split_scene=True):
                 continue
             list_relationships.append(relationships)
 
-            #  check #
+            # check #
             for obj in relationships['objects']:
                 assert (obj in seg_group)
             for rel in relationships['relationships']:
                 assert (rel[0] in relationships['objects'])
                 assert (rel[1] in relationships['objects'])
     else:
-        relationships = gen_relationship(
-            scan_id, 0, map_segment_pd_2_gt, instance2labelName)
+        relationships = gen_relationship(scan_id, 0, map_segment_pd_2_gt, instance2labelName)
         if len(relationships["objects"]) != 0 and len(relationships['relationships']) != 0:
             list_relationships.append(relationships)
 
@@ -255,24 +269,29 @@ def gen_relationship(scan_id: str, split: int, map_segment_pd_2_gt: dict, instan
 
 
 if __name__ == '__main__':
+    # Main script entry point
     print("Generating ScanNet subgraphs")
+    
     args = Parser().parse_args()
     debug = args.debug
+
+    # Define the search method 
     if args.search_method == 'BBOX':
         search_method = SAMPLE_METHODS.BBOX
     elif args.search_method == 'KNN':
         search_method = SAMPLE_METHODS.RADIUS
 
+    # Define input and output directories
     input_dir = os.path.join(CONF.PATH.SCANNET_RAW_DATASETS)
     assert os.path.exists(input_dir), f"{input_dir} does not exist"
-
+    
     output_dir = os.path.join(CONF.PATH.SCANNET, "subgraphs")
-
     os.makedirs(output_dir, exist_ok=True)
 
     print(f"Searching with {args.search_method}")
 
     #  Map label to 160#
+    # Load target scans if specified
     target_scan = []
     if args.target_scan != '':
         target_scan = util_misc.read_txt_to_list(args.target_scan)
@@ -289,8 +308,10 @@ if __name__ == '__main__':
     instance2label_scans = dict()
     counter = 0
     random.shuffle(scan_ids)
+
     print("Processing scans")
     if args.parallel:
+        # Parallel processing mode
         def process_with_args(scan_ids, scan_path, split_scene):
             partially_filled_proc = partial(process, pth_3RScan=scan_path, split_scene=split_scene)
             if debug:
@@ -304,6 +325,7 @@ if __name__ == '__main__':
             relationships_new['neighbors'][scan_id] = segs_neighbors
             instance2label_scans[scan_id] = inst2labelName
     else:
+        # Sequential processing mode
         #scan_ids = ['scene0383_01']
         for scan_id in tqdm(scan_ids):
             _, relationships, segs_neighbors, inst2labelName = process(scan_id, input_dir, split_scene=args.split)
@@ -313,8 +335,9 @@ if __name__ == '__main__':
             instance2label_scans[scan_id] = inst2labelName
             if debug:
                 break
-
     Path(output_dir).mkdir(parents=True, exist_ok=True)
+    
+    # Save used arguments to a JSON file
     pth_args = os.path.join(output_dir, 'args.json')
     print(f"Store used args at {pth_args}")
     with open(pth_args, 'w') as f:
@@ -327,12 +350,14 @@ if __name__ == '__main__':
     with open(pth_relationships_json, 'w') as f:
         json.dump(relationships_new, f)
 
+    # Save the list of processed scans to a text file
     pth_split = os.path.join(output_dir, args.type+'_scans.txt')
     print(f"Store used scans at {pth_split}")
     with open(pth_split, 'w') as f:
         for name in valid_scans:
             f.write(f'{name}\n')
 
+    # Save instance-to-label mappings for each scan
     pth_inst2label = os.path.join(output_dir, 'instance2labels')
     print(f"Store used inst2label at {pth_split}")
     os.makedirs(pth_inst2label, exist_ok=True)
