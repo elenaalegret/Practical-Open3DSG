@@ -60,7 +60,10 @@ if use_subset:
 # CONF.PATH.SCANNET = os.path.join(CONF.PATH.DATA, "OpenSG_ScanNet")
 # Output directory for processed datasets
 CONF.PATH.R3SCAN = os.path.join(CONF.PATH.DATA_OUT, "datasets", "OpenSG_3RScan")            # Output directory for processed 3RScan dataset
-CONF.PATH.SCANNET = os.path.join(CONF.PATH.DATA_OUT, "datasets", "OpenSG_ScanNets")          # Output directory for processed ScanNet dataset
+CONF.PATH.SCANNET = os.path.join(CONF.PATH.DATA_OUT, "datasets", "OpenSG_ScanNet")          # Output directory for processed ScanNet dataset
+if use_subset:
+    print('IMPORTANT: Using subset ...')
+    CONF.PATH.SCANNET = os.path.join(CONF.PATH.DATA_OUT, "datasets", "OpenSG_ScanNets")          # Output directory for processed ScanNet dataset
 CONF.PATH.CHECKPOINTS = os.path.join(CONF.PATH.DATA_OUT, "checkpoints")
 CONF.PATH.FEATURES = os.path.join(CONF.PATH.DATA_OUT, "features")
 
